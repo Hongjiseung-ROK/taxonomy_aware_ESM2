@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cafaeval"
+version = "1.2.1"
+authors = [
+    {name = 'Damiano Piovesan', email = 'damiano.piovesan@unipd.it'},
+    {name = 'Parnal Joshi', email = 'parnal@iastate.edu'}
+]
+description = 'CAFA evaluator code'
+readme = {file = 'README.md', 'content-type' = 'text/markdown'}
+#url='https://github.com/BioComputingUP/CAFA-evaluator'
+requires-python = '>=3.6'
+keywords = ['CAFA', 'structured data', 'ontology', 'Gene Ontology', 'protein function']
+license = {file = 'LICENCE.md', 'content-type' = 'text/markdown'}
+classifiers=[
+    'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+    'Programming Language :: Python :: 3',
+    'Operating System :: OS Independent',
+]
+dependencies = [
+    'pandas',
+    'matplotlib',
+    'numpy',
+]
+
+[project.urls]
+Homepage = "https://github.com/BioComputingUP/CAFA-evaluator"
+Repository = "https://github.com/BioComputingUP/CAFA-evaluator"
+Changelog = "https://github.com/BioComputingUP/CAFA-evaluator/blob/main/CHANGELOG.md"
+Wiki = "https://github.com/BioComputingUP/CAFA-evaluator/wiki"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[project.scripts]
+cafaeval = "cafaeval.__main__:command_line"
+
+[tool.setuptools.package-data]
+cafaeval = ["data/example/*", "data/example/predictions/*"]

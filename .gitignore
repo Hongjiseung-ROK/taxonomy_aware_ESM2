@@ -1,0 +1,34 @@
+# User specified ignores
+uniprot_f_set/
+config.json
+plan.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+
+# Large files
+*.pth
+*.ckpt
+
+# Output directories
+metrics/
+mlruns/
+outputs/
+preds_temp/
+
+.cache/
