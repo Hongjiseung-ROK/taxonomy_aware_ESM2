@@ -2,6 +2,8 @@
 uniprot_f_set/
 config.json
 plan.md
+azure_ml_taxonomy_aware_submit.ipynb
+CLAUDE.md
 
 # Python
 __pycache__/
