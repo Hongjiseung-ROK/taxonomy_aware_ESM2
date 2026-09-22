@@ -1,69 +1,77 @@
 # Taxonomy-Aware ESM2
 
-단백질 기능 예측 모델입니다. ESM2에 NCBI 분류학 계통 정보를 교차 어텐션으로 결합해 Gene Ontology(GO) 용어를 예측합니다. CAFA 챌린지를 목표로 작업했습니다.
+A protein function prediction model that fuses NCBI taxonomic lineage into ESM2 via cross-attention to predict Gene Ontology (GO) terms. Built for the CAFA challenge.
+
+## 🥈 Result: Kaggle CAFA 6 Silver Medal
+
+Placed **92nd of 2,259 teams** in [CAFA 6 Protein Function Prediction](https://www.kaggle.com/competitions/cafa-6-protein-function-prediction) on Kaggle (awarded June 2, 2026).
+
+<p align="center">
+  <img src="assets/cafa6_silver_medal_certificate.png" alt="Kaggle CAFA 6 Protein Function Prediction — Silver Medal certificate" width="640">
+</p>
 
 ---
 
-## 배경
+## Background
 
-단백질 기능 예측에서 진화적 계통 정보는 꽤 유의미한 힌트가 됩니다. 같은 서열이라도 어떤 분류군에 속하느냐에 따라 발현되는 기능이 달라질 수 있기 때문입니다. ESM2가 서열 자체의 구조적 특징을 잡아낸다면, 분류학 정보는 그 서열이 어떤 생물학적 맥락에 있는지를 알려주는 역할을 합니다. 이 둘을 어떻게 자연스럽게 합치느냐가 이 프로젝트의 핵심 문제였습니다.
+Evolutionary lineage is a meaningful signal for protein function prediction: the same sequence can carry different functions depending on the taxon it belongs to. ESM2 captures the structural features of the sequence itself, while taxonomy tells the model which biological context the sequence comes from. The core problem of this project was how to combine the two naturally.
 
-## 내 기여
+## My Contribution
 
-GO 데이터 수집 및 유효 데이터 정제를 담당했습니다. UniProt에서 GO 주석 데이터를 수집하고, obsolete 용어 제거와 증거 코드 필터링을 통해 학습에 실제로 쓸 수 있는 데이터셋을 만들었습니다. GO 온톨로지 OBO 파일을 파싱해 40,122개의 유효 용어를 추출하고, true path rule에 따른 레이블 전파 파이프라인도 직접 구성했습니다.
+I was responsible for GO data collection and curation. I collected GO annotation data from UniProt and built a training-ready dataset by removing obsolete terms and filtering by evidence code. I parsed the GO ontology OBO file to extract 40,122 valid terms and built the label propagation pipeline following the true path rule.
 
 ---
 
-## 모델 구조
+## Model Architecture
 
 ```
-단백질 서열 (FASTA)
-      │
-      ▼
-ESM2 백본 (650M, LoRA)  →  서열 임베딩 (B, L, 1280)
-                                    │
-                          Cross-Attention  ←  분류학 임베딩 (B, 7, 1280)
-                                    │
-                           LayerNorm + Residual
-                                    │
-                           Masked Mean Pooling
-                                    │
-                          Linear (→ 40,122 GO 용어)
+Protein sequence (FASTA)
+            │
+            ▼
+ESM2 backbone (650M, LoRA)  →  Sequence embeddings (B, L, 1280)
+                                        │
+                                 Cross-Attention  ←  Taxonomy embeddings (B, 7, 1280)
+                                        │
+                              LayerNorm + Residual
+                                        │
+                               Masked Mean Pooling
+                                        │
+                           Linear (→ 40,122 GO terms)
 ```
 
-ESM2(`esm2_t33_650M_UR50D`)는 LoRA로 파인튜닝합니다. Query·Value 행렬에만 rank=8 어댑터를 붙여서 훈련 파라미터를 650M에서 약 800K로 줄였습니다.
+ESM2 (`esm2_t33_650M_UR50D`) is fine-tuned with LoRA. Rank-8 adapters are attached only to the Query and Value matrices, reducing the trainable parameters from 650M to about 800K.
 
-분류학 인코더는 문·강·목·과·속·종·아종 7단계 계층마다 별도의 임베딩 레이어(dim=128)를 둡니다. 교차 어텐션에서 서열이 Query, 분류 임베딩이 Key/Value가 되어 각 서열 위치가 어느 분류 계층을 얼마나 참조할지를 학습합니다. 단순 concatenation보다 계층별 기여를 유연하게 조정할 수 있다는 게 장점입니다.
+The taxonomy encoder has a separate embedding layer (dim=128) for each of the seven ranks: phylum, class, order, family, genus, species, and subspecies. In cross-attention, the sequence serves as the Query and the taxonomy embeddings as the Key/Value, so each sequence position learns how much to attend to each taxonomic rank. Compared with simple concatenation, this lets the model adjust each rank's contribution more flexibly.
 
-## 학습
+## Training
 
-**손실 함수**: Asymmetric Focal Loss + IC 가중치 조합을 씁니다. GO 레이블은 불균형이 심해서 (흔한 용어는 수만 개, 희귀 용어는 수십 개) 일반 BCE로는 흔한 용어에만 수렴하는 경향이 있습니다. 음성 샘플에 더 높은 집중 계수(`γ_neg=4`)를 주고, IA.tsv의 정보량(IC) 값으로 용어별 가중치를 다르게 줘서 희귀하지만 의미 있는 용어의 학습을 강제합니다.
+**Loss function**: A combination of Asymmetric Focal Loss and IC weighting. GO labels are highly imbalanced (common terms appear tens of thousands of times, rare terms only dozens), so plain BCE tends to converge on common terms alone. A higher focusing parameter on negatives (`γ_neg=4`) and per-term weights from the information content (IC) values in IA.tsv force the model to learn rare but informative terms.
 
-**평가**: CAFA 기준인 Weighted F-max를 씁니다. 임계값을 0.01~1.0 구간에서 스캔하면서 IC-가중 정밀도·재현율을 계산하고 F1이 최대인 지점을 보고합니다. 검증 손실과 별개로 이 지표로 최고 모델을 따로 저장합니다.
+**Evaluation**: Weighted F-max, the CAFA standard. Thresholds are scanned from 0.01 to 1.0, IC-weighted precision and recall are computed at each, and the point with the highest F1 is reported. The best model under this metric is saved separately from the best validation-loss model.
 
-**혼합 정밀도**: AMP(`autocast` + `GradScaler`)로 FP16 순전파, FP32 파라미터 갱신을 사용합니다.
+**Mixed precision**: AMP (`autocast` + `GradScaler`) with FP16 forward passes and FP32 parameter updates.
 
-## 데이터 전처리
+## Data Preprocessing
 
-데이터는 크게 세 가지 소스를 전처리해서 만들었습니다.
+The dataset was built by preprocessing three main sources.
 
-**GO 데이터** (`src/build_go_vocab.py`): OBO 파일에서 obsolete 용어를 제거하고 유효한 GO 용어 40,122개를 추출했습니다. UniProt 주석에서는 증거 코드 기준으로 실험적으로 검증된 항목 위주로 정제했습니다. 주석된 GO 용어의 모든 조상 용어로 레이블을 확장하는 전파(propagation)도 적용했는데, CSR 희소 행렬로 구현해서 40,122 × 40,122 크기에도 처리 속도가 나옵니다.
+**GO data** (`src/build_go_vocab.py`): Obsolete terms were removed from the OBO file, leaving 40,122 valid GO terms. UniProt annotations were curated by evidence code, prioritizing experimentally validated entries. Labels were also propagated to every ancestor of each annotated GO term; implemented with CSR sparse matrices, this stays fast even at 40,122 × 40,122.
 
-**분류학 데이터** (`src/build_taxonomy_vocab.py`, `src/vectorize_species.py`): NCBI taxonomy dump를 파싱해서 각 계층(문~아종)별 어휘를 만들고, TaxID를 7개 정수 인덱스 배열로 변환해 룩업 테이블로 저장합니다.
+**Taxonomy data** (`src/build_taxonomy_vocab.py`, `src/vectorize_species.py`): The NCBI taxonomy dump is parsed to build a vocabulary for each rank (phylum to subspecies), and each TaxID is converted into an array of seven integer indices stored as a lookup table.
 
-**서열 데이터**: FASTA 헤더의 `OX=` 필드에서 TaxID를 파싱하고, ESM2 토크나이저로 최대 1,024 토큰으로 자릅니다. 어노테이션이 없거나 분류학 벡터가 없는 항목은 학습에서 제외합니다.
+**Sequence data**: TaxIDs are parsed from the `OX=` field of FASTA headers, and sequences are truncated to at most 1,024 tokens with the ESM2 tokenizer. Entries without annotations or taxonomy vectors are excluded from training.
 
 ---
 
-## 실행
+## Usage
 
 ```bash
 pip install -r requirements.txt
 
-# 로컬 테스트 (8M 모델)
+# Local test (8M model)
 python local_train.py
 
-# 전체 학습
+# Full training
 python src/train.py \
   --data_path dataset/ \
   --esm_model_name facebook/esm2_t33_650M_UR50D \
@@ -71,27 +79,29 @@ python src/train.py \
   --use_lora True --lora_rank 8 \
   --output_dir outputs
 
-# 실험 추적
+# Experiment tracking
 mlflow ui --backend-store-uri sqlite:///src/mlflow.db
 ```
 
-## 파일 구조
+## Project Structure
 
 ```
 src/
   model.py                 # TaxonomyAwareESM, AsymmetricLoss
   dataset.py               # ProteinTaxonomyDataset
-  train.py                 # 학습 루프, 평가, MLflow
-  asymmetric_loss.py       # 손실 함수, IC 가중치
-  build_taxonomy_vocab.py  # 분류 어휘 구축
-  vectorize_species.py     # TaxID → 정수 벡터
-  build_go_vocab.py        # GO 어휘 구축
-  cafa_evaluator_driver.py # CAFA 평가
-  CAFA-evaluator-PK/       # CAFA 공식 평가 툴킷
+  train.py                 # Training loop, evaluation, MLflow
+  asymmetric_loss.py       # Loss function, IC weights
+  build_taxonomy_vocab.py  # Taxonomy vocabulary construction
+  vectorize_species.py     # TaxID → integer vector
+  build_go_vocab.py        # GO vocabulary construction
+  cafa_evaluator_driver.py # CAFA evaluation
+  CAFA-evaluator-PK/       # Official CAFA evaluation toolkit
 dataset/
-  learning_superset/       # 훈련 데이터 (Git LFS)
-  validation_superset/     # 검증 데이터
+  learning_superset/       # Training data (Git LFS)
+  validation_superset/     # Validation data
   taxon_embedding/         # species_vectors.tsv, vocab/
-  go_info/                 # OBO, 조상 행렬
-  IA.tsv                   # GO 용어별 IC 값
+  go_info/                 # OBO, ancestor matrix
+  IA.tsv                   # Per-term IC values
+assets/
+  cafa6_silver_medal_certificate.png
 ```
